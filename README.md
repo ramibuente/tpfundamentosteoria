@@ -7,7 +7,7 @@ Compara dos datasets reales de mediciones de usuarios (Ookla Open Data: red **fi
 1. Cloná o descargá este repositorio.
 2. Abrí `analisis_internet_argentina.ipynb` (Jupyter o Google Colab) y ejecutá todas las celdas, **o** corré el script:
    ```
-   pip install pandas matplotlib pyarrow openpyxl polars numba
+   pip install pandas matplotlib pyarrow openpyxl polars numba psutil
    python analisis_internet_argentina.py
    ```
 3. Los resultados (CSV, PNG y `resumen_hallazgos.txt`) se generan en la misma carpeta.

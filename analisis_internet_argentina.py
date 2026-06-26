@@ -666,15 +666,18 @@ print("        8 gráficos guardados.\n")
 #
 # MÉTRICAS:
 #   - Tiempo de ejecución (promedio de varias repeticiones, con warm-up).
-#   - Pico de memoria (tracemalloc; mide asignaciones a nivel Python -> es lo más
-#     representativo para pandas. Polars/Numba trabajan parte de su memoria en
-#     código nativo (Rust/LLVM) que tracemalloc no captura del todo: se aclara
-#     como limitación de la medición).
+#   - Pico de memoria (RSS vía psutil; muestreamos el Resident Set Size que el
+#     sistema operativo reporta del proceso. Incluye TODA la memoria del proceso
+#     sin importar el lenguaje que la asignó, por lo que captura la memoria nativa
+#     de Polars (Rust) y Numba (LLVM) que tracemalloc -limitado al heap de Python-
+#     no veía).
 #   - Uso de CPU expresado como "núcleos efectivos" = tiempo_CPU / tiempo_reloj.
 #     ~1 => un solo núcleo (limitado por el GIL, caso de pandas); >1 => varios
 #     núcleos en paralelo (caso de Polars, que no depende del GIL de Python).
+import gc
 import time
-import tracemalloc
+import threading
+import psutil
 import tempfile
 
 try:
@@ -759,6 +762,8 @@ if HAS_NUMBA:
     _stats_jit(np.array([1.0, 2.0, 3.0]))   # warm-up: fuerza la compilación JIT
 
 # ---- Medición ---------------------------------------------------------------
+_PROC = psutil.Process()
+
 def medir(func, reps=3):
     func()                                            # warm-up (cachés, lazy, etc.)
     t0, c0 = time.perf_counter(), time.process_time()
@@ -766,10 +771,26 @@ def medir(func, reps=3):
         func()
     wall = (time.perf_counter() - t0) / reps          # tiempo de reloj
     cpu = (time.process_time() - c0) / reps           # tiempo de CPU (suma de hilos)
-    tracemalloc.start()                               # pico de memoria (1 corrida)
+    # Pico de memoria (1 corrida): muestreamos el RSS del proceso desde un hilo
+    # aparte mientras corre la función y nos quedamos con el máximo. El RSS lo
+    # informa el SO e incluye TODA la memoria del proceso (Python + nativa de
+    # Rust/LLVM), a diferencia de tracemalloc que sólo veía el heap de Python.
+    gc.collect()
+    base = _PROC.memory_info().rss
+    pico = {"rss": base}
+    parar = threading.Event()
+    def _sampler():
+        while not parar.is_set():
+            r = _PROC.memory_info().rss
+            if r > pico["rss"]:
+                pico["rss"] = r
+            time.sleep(0.001)                         # muestreo cada ~1 ms
+    h = threading.Thread(target=_sampler)
+    h.start()
     func()
-    _, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
+    parar.set()
+    h.join()
+    peak = max(0, pico["rss"] - base)                 # incremento sobre la base
     nucleos = cpu / wall if wall > 0 else float("nan")
     return wall, peak / 1e6, nucleos
 
@@ -796,7 +817,7 @@ _cols = {"pandas": "#3498db", "Polars": "#e67e22", "Numba (kernel)": "#2ecc71"}
 _cl = [_cols.get(l, "#888888") for l in benchmark["libreria"]]
 for ax, col, titulo, ylab, fmt in [
     (axes[0], "tiempo_s", "Tiempo de ejecución", "segundos", "{:.3f}"),
-    (axes[1], "memoria_pico_mb", "Pico de memoria (Python)", "MB", "{:.0f}"),
+    (axes[1], "memoria_pico_mb", "Pico de memoria (RSS)", "MB", "{:.0f}"),
     (axes[2], "cpu_nucleos_efectivos", "CPU: núcleos efectivos", "tiempoCPU / tiempoReloj", "{:.2f}")]:
     bars = ax.bar(benchmark["libreria"], benchmark[col], color=_cl)
     ax.set_title(titulo, fontweight="bold", fontsize=11)
@@ -835,8 +856,10 @@ Tarea medida: lectura CSV + filtro + transformación + agregación (groupby) sob
 Conclusión: para el pipeline tabular de este TP (leer + filtrar + agrupar),
 {_mas_rapida} resulta la opción más conveniente; Numba conviene cuando el cuello
 de botella es un cálculo numérico a medida sobre arrays.
-NOTA de medición: el pico de memoria por tracemalloc refleja asignaciones a nivel
-Python; subestima la memoria nativa de Polars (Rust) y Numba (LLVM).
+NOTA de medición: el pico de memoria se mide como incremento del RSS (Resident Set
+Size) del proceso vía psutil, muestreado durante la ejecución. El RSS lo reporta el
+SO e incluye toda la memoria del proceso, por lo que -a diferencia de tracemalloc-
+sí contabiliza la memoria nativa de Polars (Rust) y Numba (LLVM).
 --------------------------------------------------------------------------------
 """
 print(discusion_bench)

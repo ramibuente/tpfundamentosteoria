@@ -2,3 +2,23 @@
 *performance_mobile_tiles.parquet
 __pycache__/
 .ipynb_checkpoints/
+.venv/
+
+# Salidas generadas por el notebook / scripts (no versionar)
+benchmark_comparativo.png
+benchmark_discusion.txt
+benchmark_librerias.csv
+enacom_accesos_lentos_top5.png
+enacom_rangos_2024q4_clean.csv
+enacom_velocidad_media_2024q4_clean.csv
+ookla_argentina_distribucion.csv
+ookla_argentina_regions.csv
+ookla_argentina_summary.csv
+ookla_fixed_download_region.png
+ookla_fixed_latency_region.png
+ookla_fixed_mobile_comparison.png
+ookla_latency_distribution.png
+ookla_latency_vs_throughput.png
+ookla_mobile_download_region.png
+ookla_mobile_latency_region.png
+resumen_hallazgos.txt
